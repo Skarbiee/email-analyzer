@@ -9,7 +9,7 @@ email-analyzer/
 ├── composer.json                # Configuration Composer
 ├── credentials.json             # Identifiants Google (à obtenir)
 ├── follow_ups.json              # Relances programmées (créé automatiquement)
-├── README.md                    # Ce fichier
+├── README.md
 ├── send_reminders.php           # Script de relance automatique
 ├── src/
 │   ├── GmailFetcher.php         # Classe pour récupérer les emails depuis Gmail
@@ -88,7 +88,15 @@ Pour utiliser l'API Gmail, vous devez obtenir des identifiants OAuth 2.0 :
    - `.../auth/gmail.send`
 5. Ajoutez votre adresse email comme utilisateur test
 
-### 3. Configuration du serveur web
+### 3. Modification de certaine ligne dans le projet
+#### Dans send_reminders.php
+1. A la ligne 245 `$email = 'noreply@example.com';`, remplacez l'email avec votre adresse email.
+2. A la ligne 249 `$name = "Service de relance automatique";`, remplacez le avec votre nom ou celui de l'entreprise.
+3. A partir de la ligne 22, il est possible de personnaliser le contenu du mail.
+#### Dans analyze_email.py
+1. Il est possible d'étendre les expression régulières pour détecter des formulations spécifiques (lignes 20 à 38 et lignes 119 à 133)
+
+### 4. Configuration du serveur web
 
 #### Serveur de développement
 ```bash
@@ -135,7 +143,7 @@ sudo a2ensite email-analyzer.conf
 sudo systemctl restart apache2
 ```
 
-### 4. Configuration des tâches planifiées
+### 5. Configuration des tâches planifiées
 
 #### Windows (Planificateur de tâches)
 1. Ouvrez le Planificateur de tâches Windows
