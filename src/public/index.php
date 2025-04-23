@@ -35,7 +35,9 @@ $translations = [
         'manual_scheduled' => 'Relance programmée manuellement.',
         'emails_fetched' => 'Emails récupérés avec succès.',
         'language_selector' => 'Langue :',
-        'error' => 'Erreur :'
+        'error' => 'Erreur :',
+        'timezone_cet' => 'Heure de Paris',
+        'timezone_cest' => 'Heure d\'été de Paris',
     ],
     'en' => [
         'title' => 'Automatic Email Follow-up System',
@@ -64,7 +66,9 @@ $translations = [
         'manual_scheduled' => 'Follow-up manually scheduled.',
         'emails_fetched' => 'Emails successfully retrieved.',
         'language_selector' => 'Language:',
-        'error' => 'Error:'
+        'error' => 'Error:',
+        'timezone_cet' => 'Central European Time',
+        'timezone_cest' => 'Central European Summer Time',
     ]
 ];
 
@@ -100,7 +104,7 @@ if ($testMode) {
             'subject' => $userLang == 'fr' ? 'Demande de devis' : 'Quote request',
             'from' => 'client1@example.com',
             'date' => date('Y-m-d H:i:s'),
-            'body' => $userLang == 'fr' ? 
+            'body' => $userLang == 'fr' ?
                 "Bonjour,\n\nPouvez-vous me faire un devis pour votre service ? Je vous recontacterai dans 2 semaines.\n\nCordialement,\nClient 1" :
                 "Hello,\n\nCan you provide me with a quote for your service? I will contact you again in 2 weeks.\n\nBest regards,\nClient 1"
         ],
@@ -125,12 +129,12 @@ if ($testMode) {
                 "Hi,\n\nDon't forget our monthly meeting. I'll send you the agenda next month.\n\nSee you soon"
         ]
     ];
-    
+
     // Analyse simulée des emails de test
     if ($action == 'list') {
         $message = $t['test_mode'];
         $analyzer = new PythonBridge('python', __DIR__ . '/../python/analyze_email.py');
-        
+
         foreach ($emails as &$email) {
             try {
                 $email['analysis'] = $analyzer->analyzeEmail($email['body']);
@@ -147,8 +151,8 @@ if ($testMode) {
                 $analyzer = new PythonBridge('python', __DIR__ . '/../python/analyze_email.py');
                 try {
                     $email['analysis'] = $analyzer->analyzeEmail($email['body']);
-                    $message = $t['analyzed'] . " " . 
-                              ($email['analysis']['needs_follow_up'] ? $t['followup_needed'] : $t['followup_notneeded']);
+                    $message = $t['analyzed'] . " " .
+                        ($email['analysis']['needs_follow_up'] ? $t['followup_needed'] : $t['followup_notneeded']);
                     $emails = [$email];
                 } catch (Exception $e) {
                     $message = $t['error'] . " " . $e->getMessage();
@@ -162,19 +166,19 @@ if ($testMode) {
     try {
         $fetcher = new GmailFetcher();
         $analyzer = new PythonBridge('python', __DIR__ . '/../python/analyze_email.py');
-        
+
         switch ($action) {
             case 'analyze':
                 if (!empty($emailId)) {
                     // Récupération de l'email spécifique
                     $email = $fetcher->fetchEmailById($emailId);
-                    
+
                     // Analyse de l'email
                     $analysis = $analyzer->analyzeEmail($email['body']);
-                    
+
                     // Mise à jour des données de l'email avec les résultats de l'analyse
                     $email['analysis'] = $analysis;
-                    
+
                     // Si une relance est nécessaire, programmation de la relance
                     if ($analysis['needs_follow_up'] && $analysis['follow_up_date']) {
                         scheduleFollowUp($email);
@@ -182,29 +186,29 @@ if ($testMode) {
                     } else {
                         $message = $t['analyzed'] . " " . $t['followup_notneeded'];
                     }
-                    
+
                     $emails = [$email];
                 }
                 break;
-                
+
             case 'schedule':
                 if (!empty($emailId)) {
                     // Récupération de l'email spécifique
                     $email = $fetcher->fetchEmailById($emailId);
-                    
+
                     // Force la programmation d'une relance manuelle
                     scheduleFollowUp($email, $_POST['follow_up_date'] ?? null);
-                    
+
                     $message = $t['manual_scheduled'];
                     $emails = [$email];
                 }
                 break;
-                
+
             case 'list':
             default:
                 // Récupération des emails récents
                 $emails = $fetcher->fetchEmails(10);
-                
+
                 // Analyse de chaque email
                 foreach ($emails as &$email) {
                     try {
@@ -216,13 +220,13 @@ if ($testMode) {
                         ];
                     }
                 }
-                
+
                 $message = $t['emails_fetched'];
                 break;
         }
     } catch (Exception $e) {
         $message = $t['error'] . " " . $e->getMessage();
-        
+
         // Si erreur d'authentification, passer en mode test
         if (strpos($e->getMessage(), 'auth') !== false) {
             $testMode = true;
@@ -234,15 +238,16 @@ if ($testMode) {
 /**
  * Programmation d'une relance
  */
-function scheduleFollowUp($email, $customDate = null) {
+function scheduleFollowUp($email, $customDate = null)
+{
     // Date de relance (soit personnalisée, soit celle de l'analyse)
     $followUpDate = $customDate ?? $email['analysis']['follow_up_date'] ?? null;
-    
+
     if (!$followUpDate) {
         // Si pas de date définie, on utilise une semaine par défaut
         $followUpDate = date('c', strtotime('+1 week'));
     }
-    
+
     // Ici, on pourrait utiliser une base de données pour stocker les relances
     // Exemple simple avec un fichier JSON
     $followUps = [];
@@ -250,7 +255,7 @@ function scheduleFollowUp($email, $customDate = null) {
     if (file_exists($followUpsPath)) {
         $followUps = json_decode(file_get_contents($followUpsPath), true) ?? [];
     }
-    
+
     $followUps[] = [
         'email_id' => $email['id'],
         'thread_id' => $email['threadId'],
@@ -259,15 +264,16 @@ function scheduleFollowUp($email, $customDate = null) {
         'scheduled_date' => $followUpDate,
         'status' => 'pending'
     ];
-    
+
     file_put_contents($followUpsPath, json_encode($followUps, JSON_PRETTY_PRINT));
-    
+
     return true;
 }
 ?>
 
 <!DOCTYPE html>
 <html lang="<?php echo $userLang; ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -277,24 +283,27 @@ function scheduleFollowUp($email, $customDate = null) {
         .needs-follow-up {
             background-color: #ffeeba;
         }
+
         .language-selector {
             margin-bottom: 20px;
         }
     </style>
 </head>
+
 <body>
     <div class="container mt-4">
         <h1><?php echo $t['title']; ?></h1>
-        
+
         <div class="language-selector">
             <span><?php echo $t['language_selector']; ?></span>
             <?php foreach ($supportedLanguages as $code => $name): ?>
-                <a href="?lang=<?php echo $code; ?><?php echo $testMode ? '&test=1' : ''; ?><?php echo !empty($action) && $action != 'list' ? '&action=' . $action : ''; ?><?php echo !empty($emailId) ? '&id=' . $emailId : ''; ?>" class="btn btn-sm <?php echo $userLang == $code ? 'btn-primary' : 'btn-outline-primary'; ?>">
+                <a href="?lang=<?php echo $code; ?><?php echo $testMode ? '&test=1' : ''; ?><?php echo !empty($action) && $action != 'list' ? '&action=' . $action : ''; ?><?php echo !empty($emailId) ? '&id=' . $emailId : ''; ?>"
+                    class="btn btn-sm <?php echo $userLang == $code ? 'btn-primary' : 'btn-outline-primary'; ?>">
                     <?php echo $name; ?>
                 </a>
             <?php endforeach; ?>
         </div>
-        
+
         <div class="alert alert-<?php echo $testMode ? 'warning' : 'info'; ?> mb-4">
             <?php if ($testMode): ?>
                 <strong><?php echo $t['test_mode']; ?></strong>
@@ -304,23 +313,26 @@ function scheduleFollowUp($email, $customDate = null) {
             <?php else: ?>
                 <strong><?php echo $t['normal_mode']; ?></strong>
             <?php endif; ?>
-            
+
             <?php if (!empty($message)): ?>
                 <div class="mt-2"><?php echo $message; ?></div>
             <?php endif; ?>
         </div>
-        
+
         <div class="row mb-4">
             <div class="col">
-                <a href="?lang=<?php echo $userLang; ?>&action=list<?php echo $testMode ? '&test=1' : ''; ?>" class="btn btn-primary"><?php echo $t['refresh_list']; ?></a>
+                <a href="?lang=<?php echo $userLang; ?>&action=list<?php echo $testMode ? '&test=1' : ''; ?>"
+                    class="btn btn-primary"><?php echo $t['refresh_list']; ?></a>
                 <?php if (!$testMode): ?>
-                    <a href="?lang=<?php echo $userLang; ?>&test=1" class="btn btn-outline-secondary"><?php echo $t['test_mode_btn']; ?></a>
+                    <a href="?lang=<?php echo $userLang; ?>&test=1"
+                        class="btn btn-outline-secondary"><?php echo $t['test_mode_btn']; ?></a>
                 <?php else: ?>
-                    <a href="?lang=<?php echo $userLang; ?>" class="btn btn-outline-success"><?php echo $t['normal_mode_btn']; ?></a>
+                    <a href="?lang=<?php echo $userLang; ?>"
+                        class="btn btn-outline-success"><?php echo $t['normal_mode_btn']; ?></a>
                 <?php endif; ?>
             </div>
         </div>
-        
+
         <div class="table-responsive">
             <table class="table table-striped">
                 <thead>
@@ -334,26 +346,32 @@ function scheduleFollowUp($email, $customDate = null) {
                 </thead>
                 <tbody>
                     <?php foreach ($emails as $email): ?>
-                        <tr class="<?php echo isset($email['analysis']['needs_follow_up']) && $email['analysis']['needs_follow_up'] ? 'needs-follow-up' : ''; ?>">
+                        <tr
+                            class="<?php echo isset($email['analysis']['needs_follow_up']) && $email['analysis']['needs_follow_up'] ? 'needs-follow-up' : ''; ?>">
                             <td><?php echo $email['date']; ?></td>
                             <td><?php echo htmlspecialchars($email['from']); ?></td>
                             <td><?php echo htmlspecialchars($email['subject']); ?></td>
                             <td>
                                 <?php if (isset($email['analysis']['needs_follow_up']) && $email['analysis']['needs_follow_up']): ?>
                                     <span class="badge bg-warning">
-                                        <?php echo $t['need_followup']; ?> <?php echo $email['analysis']['time_reference']; ?>
-                                        (<?php echo $email['analysis']['follow_up_date']; ?>)
+                                        <?php echo $t['need_followup']; ?>         <?php echo $email['analysis']['time_reference']; ?>
+                                        <?php
+                                        if (!empty($email['analysis']['follow_up_date'])) {
+                                            $date = new DateTime($email['analysis']['follow_up_date']);
+                                            $date->setTimezone(new DateTimeZone('Europe/Paris')); // Remplacez par votre fuseau horaire
+                                            echo '(' . $date->format('d/m/Y H:i') . ' ' . $t['timezone_' . strtolower($date->format('T'))] . ')';
+                                        }
+                                        ?>
                                     </span>
                                 <?php else: ?>
                                     <span class="badge bg-secondary"><?php echo $t['no_followup']; ?></span>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <a href="?lang=<?php echo $userLang; ?>&action=analyze&id=<?php echo $email['id']; ?><?php echo $testMode ? '&test=1' : ''; ?>" class="btn btn-sm btn-info"><?php echo $t['action_analyze']; ?></a>
-                                <button type="button" class="btn btn-sm btn-primary" 
-                                        data-bs-toggle="modal" 
-                                        data-bs-target="#scheduleModal" 
-                                        data-email-id="<?php echo $email['id']; ?>">
+                                <a href="?lang=<?php echo $userLang; ?>&action=analyze&id=<?php echo $email['id']; ?><?php echo $testMode ? '&test=1' : ''; ?>"
+                                    class="btn btn-sm btn-info"><?php echo $t['action_analyze']; ?></a>
+                                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal"
+                                    data-bs-target="#scheduleModal" data-email-id="<?php echo $email['id']; ?>">
                                     <?php echo $t['action_schedule']; ?>
                                 </button>
                             </td>
@@ -363,12 +381,13 @@ function scheduleFollowUp($email, $customDate = null) {
             </table>
         </div>
     </div>
-    
+
     <!-- Modal pour programmer une relance manuelle -->
     <div class="modal fade" id="scheduleModal" tabindex="-1" aria-labelledby="scheduleModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form action="?lang=<?php echo $userLang; ?>&action=schedule<?php echo $testMode ? '&test=1' : ''; ?>" method="post">
+                <form action="?lang=<?php echo $userLang; ?>&action=schedule<?php echo $testMode ? '&test=1' : ''; ?>"
+                    method="post">
                     <input type="hidden" name="id" id="emailIdInput">
                     <div class="modal-header">
                         <h5 class="modal-title" id="scheduleModalLabel"><?php echo $t['modal_title']; ?></h5>
@@ -377,30 +396,32 @@ function scheduleFollowUp($email, $customDate = null) {
                     <div class="modal-body">
                         <div class="mb-3">
                             <label for="follow_up_date" class="form-label"><?php echo $t['modal_date']; ?></label>
-                            <input type="datetime-local" class="form-control" id="follow_up_date" name="follow_up_date" required>
+                            <input type="datetime-local" class="form-control" id="follow_up_date" name="follow_up_date"
+                                required>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?php echo $t['modal_cancel']; ?></button>
+                        <button type="button" class="btn btn-secondary"
+                            data-bs-dismiss="modal"><?php echo $t['modal_cancel']; ?></button>
                         <button type="submit" class="btn btn-primary"><?php echo $t['modal_schedule']; ?></button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-    
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Script pour le modal de programmation
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             const scheduleModal = document.getElementById('scheduleModal');
             if (scheduleModal) {
-                scheduleModal.addEventListener('show.bs.modal', function(event) {
+                scheduleModal.addEventListener('show.bs.modal', function (event) {
                     const button = event.relatedTarget;
                     const emailId = button.getAttribute('data-email-id');
                     const emailIdInput = document.getElementById('emailIdInput');
                     emailIdInput.value = emailId;
-                    
+
                     // Date par défaut (dans une semaine)
                     const now = new Date();
                     now.setDate(now.getDate() + 7);
@@ -411,4 +432,5 @@ function scheduleFollowUp($email, $customDate = null) {
         });
     </script>
 </body>
+
 </html>
