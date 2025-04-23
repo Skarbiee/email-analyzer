@@ -1,0 +1,3 @@
+import { Stream } from 'node:stream';
+export declare function isStream(maybeStream: unknown): maybeStream is Stream;
+export declare function parseXml<T>(xml: string): Promise<T>;

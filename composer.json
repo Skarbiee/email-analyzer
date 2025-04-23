@@ -1,0 +1,18 @@
+{
+    "name": "local/email-analyzer",
+    "description": "Système d'analyse d'emails pour la détection de relances automatiques",
+    "autoload": {
+        "psr-4": {
+            "Local\\EmailAnalyzer\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Skarbiee",
+            "email": "garrigues.eva15@gmail.com"
+        }
+    ],
+    "require": {
+        "google/apiclient": "^2.0"
+    }
+}

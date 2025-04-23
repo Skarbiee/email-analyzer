@@ -1,0 +1,1 @@
+{"version":3,"file":"licensed.js","sourceRoot":"","sources":["../../src/decorators/licensed.ts"],"names":[],"mappings":";;;AAEA,+DAAyD;AAGlD,MAAM,QAAQ,GACpB,CAAC,cAAqC,EAAmB,EAAE,CAC3D,CAAC,MAAM,EAAE,WAAW,EAAE,EAAE;IACvB,MAAM,aAAa,GAAG,IAAA,sCAAgB,EAAC,MAAM,CAAC,WAAyB,EAAE,MAAM,CAAC,WAAW,CAAC,CAAC,CAAC;IAC9F,aAAa,CAAC,cAAc,GAAG,cAAc,CAAC;AAC/C,CAAC,CAAC;AALU,QAAA,QAAQ,YAKlB"}

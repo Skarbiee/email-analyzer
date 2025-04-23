@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../test/globalSetup.ts"],"sourcesContent":["import nock from 'nock';\n\nexport default async () => {\n\tnock.disableNetConnect();\n};\n"],"mappings":";;;;;;;;;;;;;;;;;;;;;;;;;;;;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA,kBAAiB;AAEjB,IAAO,sBAAQ,YAAY;AAC1B,cAAAA,QAAK,kBAAkB;AACxB;","names":["nock"]}

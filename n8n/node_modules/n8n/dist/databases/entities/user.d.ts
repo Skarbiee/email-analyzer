@@ -1,0 +1,38 @@
+import { type ScopeOptions, type Scope } from '@n8n/permissions';
+import type { IUser, IUserSettings } from 'n8n-workflow';
+import type { IPersonalizationSurveyAnswers } from '../../interfaces';
+import { WithTimestamps } from './abstract-entity';
+import type { ApiKey } from './api-key';
+import type { AuthIdentity } from './auth-identity';
+import type { ProjectRelation } from './project-relation';
+import type { SharedCredentials } from './shared-credentials';
+import type { SharedWorkflow } from './shared-workflow';
+export type GlobalRole = 'global:owner' | 'global:admin' | 'global:member';
+export type AssignableRole = Exclude<GlobalRole, 'global:owner'>;
+export declare class User extends WithTimestamps implements IUser {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    password: string;
+    personalizationAnswers: IPersonalizationSurveyAnswers | null;
+    settings: IUserSettings | null;
+    role: GlobalRole;
+    authIdentities: AuthIdentity[];
+    apiKeys: ApiKey[];
+    sharedWorkflows: SharedWorkflow[];
+    sharedCredentials: SharedCredentials[];
+    projectRelations: ProjectRelation[];
+    disabled: boolean;
+    preUpsertHook(): void;
+    mfaEnabled: boolean;
+    isPending: boolean;
+    computeIsPending(): void;
+    isOwner: boolean;
+    computeIsOwner(): void;
+    get globalScopes(): Scope[];
+    hasGlobalScope(scope: Scope | Scope[], scopeOptions?: ScopeOptions): boolean;
+    toJSON(): Omit<this, "setUpdateDate" | "password" | "preUpsertHook" | "computeIsPending" | "computeIsOwner" | "globalScopes" | "hasGlobalScope" | "toJSON" | "createPersonalProjectName" | "toIUser">;
+    createPersonalProjectName(): string;
+    toIUser(): IUser;
+}
