@@ -1,23 +1,29 @@
 # Email Analyzer - Système de détection et relance automatique
 
-Ce projet est un système qui analyse automatiquement les emails pour détecter les demandes de relance (par exemple "à relancer dans un mois") et programme des emails de suivi automatiquement. Le système est multilingue (français et anglais) et peut être déployé sur un Raspberry Pi ou d'autres environnements.
+Ce projet est un système qui analyse automatiquement les emails pour détecter les demandes de relance (par exemple "à relancer dans un mois") et programme des emails de suivi automatiquement. Le système est multilingue (français et anglais), utilise des modèles Transformers pour une analyse avancée, permet le scraping des événements Lu.ma, et peut être déployé sur un Raspberry Pi ou d'autres environnements.
 
 ## Structure du projet
 
 ```
 email-analyzer/
 ├── composer.json                # Configuration Composer
+├── config.php                   # Configuration centralisée du système
 ├── credentials.json             # Identifiants Google (à obtenir)
+├── docs/                        # Documentation détaillée
+│   └── python_installation.md   # Guide d'installation des dépendances Python
 ├── follow_ups.json              # Relances programmées (créé automatiquement)
 ├── README.md
 ├── send_reminders.php           # Script de relance automatique
 ├── src/
 │   ├── GmailFetcher.php         # Classe pour récupérer les emails depuis Gmail
+│   ├── LumaScraper.php          # Classe pour extraire les infos des événements Lu.ma
 │   ├── PythonBridge.php         # Classe pour communiquer avec Python
 │   ├── public/
 │   │   └── index.php            # Interface web principale
+│   ├── api/
+│   │   └── analyze-email.php    # Recupération des infos des emails par API
 │   └── python/
-│       └── analyze_email.py     # Script Python d'analyse des emails
+│       └── analyze_email.py     # Script Python d'analyse des emails avec Transformers
 ├── token.json                   # Token d'accès Google (créé automatiquement)
 ├── venv/                        # Environnement virtuel Python
 └── vendor/                      # Dépendances PHP (installées par Composer)
@@ -47,22 +53,21 @@ composer install
 ```
 
 #### Configuration de l'environnement Python
-```bash
-# Activation de l'environnement virtuel
-# Sur Windows
-venv\Scripts\activate
-# Sur Linux/macOS
-source venv/bin/activate
+Voir le guide [docs/python_installation.md](docs/python_installation.md) pour des instructions détaillées sur l'installation des modèles Transformers.
 
-# Installation des dépendances Python
-pip install transformers torch
+### 2. Configuration du système
 
-# Version légère pour Raspberry Pi
-# pip install transformers --no-deps
-# pip install torch --index-url https://download.pytorch.org/whl/cpu
-```
+Le projet utilise un fichier `config.php` à la racine qui centralise tous les paramètres personnalisables. Modifiez ce fichier pour adapter le système à votre environnement.
 
-### 2. Configuration des identifiants Google
+Les principaux paramètres à personnaliser sont :
+- Informations de l'expéditeur des emails (email, nom)
+- Paramètres de l'interface utilisateur (langue, fuseau horaire)
+- Chemins vers les exécutables Python
+- Patterns pour détecter les emails Lu.ma
+
+Consultez les commentaires dans `config.php` pour des explications détaillées sur chaque paramètre.
+
+### 3. Configuration des identifiants Google
 
 Pour utiliser l'API Gmail, vous devez obtenir des identifiants OAuth 2.0 :
 
@@ -87,14 +92,6 @@ Pour utiliser l'API Gmail, vous devez obtenir des identifiants OAuth 2.0 :
    - `.../auth/gmail.readonly`
    - `.../auth/gmail.send`
 5. Ajoutez votre adresse email comme utilisateur test
-
-### 3. Modification de certaine ligne dans le projet
-#### Dans send_reminders.php
-1. A la ligne 245 `$email = 'noreply@example.com';`, remplacez l'email avec votre adresse email.
-2. A la ligne 249 `$name = "Service de relance automatique";`, remplacez le avec votre nom ou celui de l'entreprise.
-3. A partir de la ligne 22, il est possible de personnaliser le contenu du mail.
-#### Dans analyze_email.py
-1. Il est possible d'étendre les expression régulières pour détecter des formulations spécifiques (lignes 20 à 38 et lignes 119 à 133)
 
 ### 4. Configuration du serveur web
 
@@ -166,7 +163,7 @@ crontab -e
 
 #### macOS (Launchd)
 1. Créez un fichier plist dans `~/Library/LaunchAgents/com.yourusername.emailreminder.plist` : 
-> Remplacez `yourusername` par votre nom d'utilisateur système ainsi que 
+> Remplacez `yourusername` par votre nom d'utilisateur système
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -203,20 +200,18 @@ launchctl load ~/Library/LaunchAgents/com.yourusername.emailreminder.plist
 
 Si vous déployez sur un Raspberry Pi, voici quelques ajustements recommandés :
 
-1. Utilisez la version légère des dépendances Python :
-```bash
-pip install transformers --no-deps
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-```
+1. Dans `config.php`, ajustez les paramètres Python pour des modèles plus légers si nécessaire.
 
-2. Assurez-vous que les permissions sont correctement configurées :
+2. Utilisez la version légère des dépendances Python comme indiqué dans [docs/python_installation.md](docs/python_installation.md).
+
+3. Assurez-vous que les permissions sont correctement configurées :
 ```bash
 sudo chown -R www-data:www-data /chemin/vers/email-analyzer
 chmod -R 775 /chemin/vers/email-analyzer/token.json
 chmod -R 775 /chemin/vers/email-analyzer/follow_ups.json
 ```
 
-3. Considérez l'utilisation de systemd plutôt que cron pour les performances :
+4. Considérez l'utilisation de systemd plutôt que cron pour les performances :
 ```bash
 # Créez un fichier de service dans /etc/systemd/system/email-reminder.service
 [Unit]
@@ -248,27 +243,39 @@ sudo systemctl start email-reminder.service
 3. Une fois connecté, vous verrez la liste de vos emails récents
 4. Le système analysera automatiquement les emails pour détecter les demandes de relance
 5. Vous pouvez également programmer manuellement des relances via l'interface
-6. Le script `send_reminders.php` s'exécutera automatiquement selon la planification configurée pour envoyer les relances au moment approprié
+6. Consultez l'onglet "Événements Lu.ma" pour voir les événements extraits de vos emails:
+   - Vous pouvez filtrer pour voir tous les événements, seulement ceux auxquels vous êtes inscrit, ou seulement ceux que vous organisez
+   - Chaque événement est identifié comme "Email d'inscription" ou "Email d'organisation" avec des badges visuels
+7. Le script `send_reminders.php` s'exécutera automatiquement selon la planification configurée pour envoyer les relances au moment approprié
 
 ## Fonctionnalités
 
-- Détection automatique des demandes de relance dans les emails
+- Détection avancée des demandes de relance dans les emails grâce aux modèles Transformers
 - Support multilingue (français et anglais)
 - Interface utilisateur pour visualiser et gérer les relances
+- Extraction et visualisation des événements Lu.ma
+  - **Distinction entre les événements auxquels vous êtes inscrit et ceux que vous organisez**
+  - **Filtres pour afficher seulement les types d'événements souhaités**
+  - **Badges visuels indiquant le type d'événement (inscription/organisation)**
 - Envoi automatique des emails de relance aux dates programmées
 - Mode test pour essayer l'application sans connexion Gmail
+- Configuration centralisée via `config.php`
 
 ## Notes importantes
 
 1. **Sécurité** : Le fichier `credentials.json` contient des informations sensibles. Ne le partagez pas et assurez-vous qu'il n'est pas accessible publiquement.
 2. **Quotas API** : L'API Gmail a des quotas limités. Si vous prévoyez un grand volume d'emails, surveillez votre utilisation dans la Console Google Cloud.
 3. **Protection des données** : Ce système accède à vos emails. Assurez-vous de respecter les lois sur la protection des données (RGPD, etc.) si vous l'utilisez dans un contexte professionnel.
+4. **Ressources requises** : L'utilisation des modèles Transformers nécessite plus de ressources. Assurez-vous d'avoir suffisamment de RAM disponible (minimum 2 Go recommandé).
 
 ## Dépannage
 
 1. **Erreurs d'authentification** : Si vous rencontrez des erreurs d'authentification, supprimez le fichier `token.json` et relancez l'application pour générer un nouveau token.
 2. **Problèmes de Python** : Vérifiez que vous utilisez bien l'interpréteur Python de l'environnement virtuel. Activez l'environnement avant d'exécuter les commandes.
-3. **Emails non détectés** : Vérifiez les expressions régulières dans `analyze_email.py` et ajoutez des patterns supplémentaires si nécessaire.
+3. **Emails non détectés** : Vérifiez les patterns dans `config.php` et ajoutez des patterns supplémentaires si nécessaire.
+4. **Erreurs de modèles Transformers** : Si vous rencontrez des erreurs avec les modèles, essayez des modèles plus légers ou augmentez les ressources disponibles en modifiant `config.php`.
+5. **Événements Lu.ma non détectés** : Ajoutez des patterns supplémentaires dans `config.php` pour mieux capter les différents formats d'emails Lu.ma.
+6. **Types d'événements Lu.ma incorrects** : Si le système ne distingue pas correctement les emails d'inscription et d'organisation, ajoutez des patterns supplémentaires dans le fichier `LumaScraper.php`.
 
 ## Extension avec n8n (optionnel)
 
