@@ -17,36 +17,41 @@ class AutoReminder
     private $client;
     private $service;
     private $analyzer;
-
-    // Templates multilingues pour les emails de relance
-    private $emailTemplates = [
-        'fr' => [
-            'subject_prefix' => 'Relance : ',
-            'body' => "Bonjour,\n\nJe me permets de vous relancer concernant notre précédent échange au sujet de \"{subject}\".\n\nEn effet, vous aviez indiqué vouloir me recontacter {time_reference}.\n\nN'hésitez pas à me faire savoir si vous avez besoin d'informations complémentaires.\n\nCordialement,\n{sender}"
-        ],
-        'en' => [
-            'subject_prefix' => 'Follow-up: ',
-            'body' => "Hello,\n\nI'm following up on our previous exchange about \"{subject}\".\n\nYou mentioned that you wanted to get back to me {time_reference}.\n\nPlease let me know if you need any additional information.\n\nBest regards,\n{sender}"
-        ]
-    ];
+    private $config;
+    private $emailTemplates;
 
     /**
      * Constructeur
      */
     public function __construct()
     {
+        // Chargement de la configuration
+        $this->config = require_once __DIR__ . '/config.php';
+        
+        // Templates multilingues pour les emails de relance
+        $this->emailTemplates = [
+            'fr' => [
+                'subject_prefix' => 'Relance : ',
+                'body' => "Bonjour,\n\nJe me permets de vous relancer concernant notre précédent échange au sujet de \"{subject}\".\n\nEn effet, vous aviez indiqué vouloir me recontacter {time_reference}.\n\nN'hésitez pas à me faire savoir si vous avez besoin d'informations complémentaires.\n\nCordialement,\n{sender}"
+            ],
+            'en' => [
+                'subject_prefix' => 'Follow-up: ',
+                'body' => "Hello,\n\nI'm following up on our previous exchange about \"{subject}\".\n\nYou mentioned that you wanted to get back to me {time_reference}.\n\nPlease let me know if you need any additional information.\n\nBest regards,\n{sender}"
+            ]
+        ];
+
         // Création du client Google
         $this->client = new Client();
-        $this->client->setApplicationName('Email Reminder');
+        $this->client->setApplicationName($this->config['gmail']['application_name']);
         $this->client->setScopes([
             Gmail::GMAIL_READONLY,
             Gmail::GMAIL_SEND
         ]);
-        $this->client->setAuthConfig(__DIR__ . '/credentials.json');
+        $this->client->setAuthConfig($this->config['gmail']['credentials_path']);
         $this->client->setAccessType('offline');
 
         // Vérification du token d'accès
-        $tokenPath = __DIR__ . '/token.json';
+        $tokenPath = $this->config['gmail']['token_path'];
         if (file_exists($tokenPath)) {
             $accessToken = json_decode(file_get_contents($tokenPath), true);
             $this->client->setAccessToken($accessToken);
@@ -66,7 +71,7 @@ class AutoReminder
         $this->service = new Gmail($this->client);
 
         // Création de l'analyseur Python
-        $this->analyzer = new PythonBridge('python', __DIR__ . '/src/python/analyze_email.py');
+        $this->analyzer = new PythonBridge();
     }
 
     /**
@@ -75,7 +80,7 @@ class AutoReminder
     public function processReminders()
     {
         // Lecture des relances programmées
-        $followUpsFile = __DIR__ . '/follow_ups.json';
+        $followUpsFile = $this->config['followup']['storage_path'];
         if (!file_exists($followUpsFile)) {
             echo "Aucune relance programmée.\n";
             return;
@@ -145,10 +150,10 @@ class AutoReminder
         // Détection de la langue du message original
         try {
             $analysis = $this->analyzer->analyzeEmail($originalBody);
-            $language = $analysis['language'] ?? 'en';  // Par défaut en anglais si non détecté
+            $language = $analysis['language'] ?? $this->config['ui']['default_language'];  // Utilisation de la langue par défaut si non détectée
         } catch (Exception $e) {
-            // En cas d'erreur, on utilise l'anglais par défaut
-            $language = 'en';
+            // En cas d'erreur, on utilise la langue par défaut
+            $language = $this->config['ui']['default_language'];
         }
 
         // Sélection du template selon la langue
@@ -241,12 +246,12 @@ class AutoReminder
             $profile = $this->service->users->getProfile('me');
             $email = $profile->getEmailAddress();
         } catch (Exception $e) {
-            // Fallback si impossible de récupérer l'email
-            $email = 'noreply@example.com'; // Remplacer par la vraie addresse email.
+            // Fallback vers la configuration en cas d'erreur
+            $email = $this->config['sender']['email'];
         }
 
-        // Nom d'expéditeur fixe
-        $name = "Service de relance automatique";
+        // Nom d'expéditeur depuis la configuration
+        $name = $this->config['sender']['name'];
 
         return [
             'name' => $name,

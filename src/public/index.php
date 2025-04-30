@@ -1,10 +1,13 @@
 <?php
 
+// Chargement de la configuration centralisée
+$config = require_once __DIR__ . '/../../config.php';
+
 // Gestion de la langue
 $supportedLanguages = ['fr' => 'Français', 'en' => 'English'];
-$userLang = $_GET['lang'] ?? 'fr';
+$userLang = $_GET['lang'] ?? $config['ui']['default_language'];
 if (!array_key_exists($userLang, $supportedLanguages)) {
-    $userLang = 'fr';
+    $userLang = $config['ui']['default_language'];
 }
 
 $translations = [
@@ -38,6 +41,24 @@ $translations = [
         'error' => 'Erreur :',
         'timezone_cet' => 'Heure de Paris',
         'timezone_cest' => 'Heure d\'été de Paris',
+        'tab_emails' => 'Emails',
+        'tab_reminders' => 'Relances programmées',
+        'tab_luma' => 'Événements Luma',
+        'luma_title' => 'Événements Luma',
+        'luma_no_events' => 'Aucun événement Luma détecté dans vos emails.',
+        'luma_date' => 'Date:',
+        'luma_time' => 'à',
+        'luma_location' => 'Lieu:',
+        'luma_organizer' => 'Organisateur:',
+        'luma_view_event' => 'Voir l\'événement',
+        'luma_add_calendar' => 'Ajouter au calendrier',
+        'luma_events_fetched' => 'Événements Luma récupérés avec succès.',
+        'luma_registration' => 'Email d\'inscription',
+        'luma_email_organizer' => 'Email d\'organisation',
+        'luma_filter_all' => 'Tous les événements',
+        'luma_filter_registered' => 'Événements auxquels vous êtes inscrit',
+        'luma_filter_organized' => 'Événements que vous organisez',
+        'luma_event_type' => 'Type:'
     ],
     'en' => [
         'title' => 'Automatic Email Follow-up System',
@@ -69,33 +90,54 @@ $translations = [
         'error' => 'Error:',
         'timezone_cet' => 'Central European Time',
         'timezone_cest' => 'Central European Summer Time',
+        'tab_emails' => 'Emails',
+        'tab_reminders' => 'Scheduled Follow-ups',
+        'tab_luma' => 'Luma Events',
+        'luma_title' => 'Luma Events',
+        'luma_no_events' => 'No Luma events detected in your emails.',
+        'luma_date' => 'Date:',
+        'luma_time' => 'at',
+        'luma_location' => 'Location:',
+        'luma_organizer' => 'Organizer:',
+        'luma_view_event' => 'View event',
+        'luma_add_calendar' => 'Add to calendar',
+        'luma_events_fetched' => 'Luma events successfully retrieved.',
+        'luma_registration' => 'Registration Email',
+        'luma_email_organizer' => 'Organizer Email',
+        'luma_filter_all' => 'All Events',
+        'luma_filter_registered' => 'Events you are registered for',
+        'luma_filter_organized' => 'Events you are organizing',
+        'luma_event_type' => 'Type:'
     ]
 ];
 
 $t = $translations[$userLang];
 
 // Affichage de toutes les erreurs pour le débogage
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-// Inclusion de l'autoloader Composer
-require_once __DIR__ . '/../../vendor/autoload.php';
+if ($config['debug']['enabled']) {
+    ini_set('display_errors', 1);
+    ini_set('display_startup_errors', 1);
+    error_reporting(E_ALL);
+}
 
 // Inclusion des classes personnalisées
 require_once __DIR__ . '/../GmailFetcher.php';
 require_once __DIR__ . '/../PythonBridge.php';
+require_once __DIR__ . '/../LumaScraper.php';
 
-// Vérification si nous sommes en mode test (sans connexion Gmail)
-$testMode = isset($_GET['test']) || !file_exists(__DIR__ . '/../../credentials.json');
+// Vérification si on est en mode test (sans connexion Gmail)
+$testMode = isset($_GET['test']) || !file_exists($config['gmail']['credentials_path']);
 
 // Récupération des emails récents
 $action = $_GET['action'] ?? 'list';
 $emailId = $_GET['id'] ?? '';
 $message = '';
 $emails = [];
+$lumaEvents = [];
+$currentTab = $_GET['tab'] ?? 'emails';
+$filter = $_GET['filter'] ?? 'all'; // Filtre pour les events Luma (all, registered, organized)
 
-// Si nous sommes en mode test, utilisez des données de test
+// Si mode test
 if ($testMode) {
     $emails = [
         [
@@ -130,10 +172,60 @@ if ($testMode) {
         ]
     ];
 
+    // Data test pour les events Luma
+    if ($currentTab == 'luma') {
+        $lumaEvents = [
+            [
+                'event_name' => $userLang == 'fr' ? 'Conférence Tech Paris 2025' : 'Tech Conference Paris 2025',
+                'event_date' => '2025-05-15',
+                'event_time' => '09:00',
+                'event_location' => 'Palais des Congrès, Paris',
+                'event_url' => 'https://lu.ma/e/tech-conference-paris-2025',
+                'organizer' => 'TechEvents Paris',
+                'calendar_link' => 'https://cal.lu.ma/tech-conference-paris-2025',
+                'email_type' => 'registration' // Type d'email: inscription
+            ],
+            [
+                'event_name' => $userLang == 'fr' ? 'Atelier de Design Thinking' : 'Design Thinking Workshop',
+                'event_date' => '2025-05-20',
+                'event_time' => '14:30',
+                'event_location' => $userLang == 'fr' ? 'Station F, Paris' : 'Station F, Paris',
+                'event_url' => 'https://lu.ma/e/design-thinking-workshop',
+                'organizer' => 'Innovation Lab',
+                'calendar_link' => 'https://cal.lu.ma/design-thinking-workshop',
+                'email_type' => 'organizer' // Type d'email: organisation
+            ],
+            [
+                'event_name' => $userLang == 'fr' ? 'Meetup Développeurs React' : 'React Developers Meetup',
+                'event_date' => '2025-06-10',
+                'event_time' => '18:30',
+                'event_location' => 'WeWork La Fayette, Paris',
+                'event_url' => 'https://lu.ma/e/react-meetup-paris',
+                'organizer' => 'Paris JS Community',
+                'calendar_link' => 'https://cal.lu.ma/react-meetup-paris',
+                'email_type' => 'registration' // Type d'email: inscription
+            ]
+        ];
+        
+        // Filtrer les events selon le filtre sélectionné
+        if ($filter !== 'all') {
+            $filteredEvents = [];
+            foreach ($lumaEvents as $event) {
+                if (($filter === 'registered' && $event['email_type'] === 'registration') ||
+                    ($filter === 'organized' && $event['email_type'] === 'organizer')) {
+                    $filteredEvents[] = $event;
+                }
+            }
+            $lumaEvents = $filteredEvents;
+        }
+        
+        $message = $t['luma_events_fetched'] . ' (' . $t['test_mode'] . ')';
+    }
+
     // Analyse simulée des emails de test
-    if ($action == 'list') {
+    if ($currentTab == 'emails') {
         $message = $t['test_mode'];
-        $analyzer = new PythonBridge('python', __DIR__ . '/../python/analyze_email.py');
+        $analyzer = new PythonBridge();
 
         foreach ($emails as &$email) {
             try {
@@ -148,7 +240,7 @@ if ($testMode) {
     } elseif ($action == 'analyze' && !empty($emailId)) {
         foreach ($emails as $email) {
             if ($email['id'] == $emailId) {
-                $analyzer = new PythonBridge('python', __DIR__ . '/../python/analyze_email.py');
+                $analyzer = new PythonBridge();
                 try {
                     $email['analysis'] = $analyzer->analyzeEmail($email['body']);
                     $message = $t['analyzed'] . " " .
@@ -165,64 +257,82 @@ if ($testMode) {
     // Mode normal avec connexion à Gmail
     try {
         $fetcher = new GmailFetcher();
-        $analyzer = new PythonBridge('python', __DIR__ . '/../python/analyze_email.py');
+        $analyzer = new PythonBridge();
 
-        switch ($action) {
-            case 'analyze':
-                if (!empty($emailId)) {
-                    // Récupération de l'email spécifique
-                    $email = $fetcher->fetchEmailById($emailId);
+        // Traitement selon l'onglet actif
+        if ($currentTab == 'luma') {
+            // Récupération des événements Luma avec le type de filtre
+            // Note: Modifiez la méthode fetchLumaEventEmails dans GmailFetcher.php pour prendre en compte le filtre
+            $lumaEvents = $fetcher->fetchLumaEventEmails($filter, $config['ui']['items_per_page']);
+            $message = $t['luma_events_fetched'];
+        } else if ($currentTab == 'reminders') {
+            // Affichage des relances programmées
+            $followUpsPath = $config['followup']['storage_path'];
+            if (file_exists($followUpsPath)) {
+                $followUps = json_decode(file_get_contents($followUpsPath), true) ?? [];
+            } else {
+                $followUps = [];
+            }
+            // Ici on pourrait ajouter le code pour afficher les relances
+        } else {
+            // Onglet emails par défaut
+            switch ($action) {
+                case 'analyze':
+                    if (!empty($emailId)) {
+                        // Récupération de l'email spécifique
+                        $email = $fetcher->fetchEmailById($emailId);
 
-                    // Analyse de l'email
-                    $analysis = $analyzer->analyzeEmail($email['body']);
+                        // Analyse de l'email
+                        $analysis = $analyzer->analyzeEmail($email['body']);
 
-                    // Mise à jour des données de l'email avec les résultats de l'analyse
-                    $email['analysis'] = $analysis;
+                        // Mise à jour des données de l'email avec les résultats de l'analyse
+                        $email['analysis'] = $analysis;
 
-                    // Si une relance est nécessaire, programmation de la relance
-                    if ($analysis['needs_follow_up'] && $analysis['follow_up_date']) {
-                        scheduleFollowUp($email);
-                        $message = $t['analyzed'] . " " . $t['followup_scheduled'] . " " . $analysis['follow_up_date'];
-                    } else {
-                        $message = $t['analyzed'] . " " . $t['followup_notneeded'];
+                        // Si une relance est nécessaire, programmation de la relance
+                        if ($analysis['needs_follow_up'] && $analysis['follow_up_date']) {
+                            scheduleFollowUp($email);
+                            $message = $t['analyzed'] . " " . $t['followup_scheduled'] . " " . $analysis['follow_up_date'];
+                        } else {
+                            $message = $t['analyzed'] . " " . $t['followup_notneeded'];
+                        }
+
+                        $emails = [$email];
+                    }
+                    break;
+
+                case 'schedule':
+                    if (!empty($emailId)) {
+                        // Récupération de l'email spécifique
+                        $email = $fetcher->fetchEmailById($emailId);
+
+                        // Force la programmation d'une relance manuelle
+                        scheduleFollowUp($email, $_POST['follow_up_date'] ?? null);
+
+                        $message = $t['manual_scheduled'];
+                        $emails = [$email];
+                    }
+                    break;
+
+                case 'list':
+                default:
+                    // Récupération des emails récents
+                    $emails = $fetcher->fetchEmails($config['ui']['items_per_page']);
+
+                    // Analyse de chaque email
+                    foreach ($emails as &$email) {
+                        try {
+                            $email['analysis'] = $analyzer->analyzeEmail($email['body']);
+                        } catch (Exception $e) {
+                            $email['analysis'] = [
+                                'error' => $e->getMessage(),
+                                'needs_follow_up' => false
+                            ];
+                        }
                     }
 
-                    $emails = [$email];
-                }
-                break;
-
-            case 'schedule':
-                if (!empty($emailId)) {
-                    // Récupération de l'email spécifique
-                    $email = $fetcher->fetchEmailById($emailId);
-
-                    // Force la programmation d'une relance manuelle
-                    scheduleFollowUp($email, $_POST['follow_up_date'] ?? null);
-
-                    $message = $t['manual_scheduled'];
-                    $emails = [$email];
-                }
-                break;
-
-            case 'list':
-            default:
-                // Récupération des emails récents
-                $emails = $fetcher->fetchEmails(10);
-
-                // Analyse de chaque email
-                foreach ($emails as &$email) {
-                    try {
-                        $email['analysis'] = $analyzer->analyzeEmail($email['body']);
-                    } catch (Exception $e) {
-                        $email['analysis'] = [
-                            'error' => $e->getMessage(),
-                            'needs_follow_up' => false
-                        ];
-                    }
-                }
-
-                $message = $t['emails_fetched'];
-                break;
+                    $message = $t['emails_fetched'];
+                    break;
+            }
         }
     } catch (Exception $e) {
         $message = $t['error'] . " " . $e->getMessage();
@@ -240,18 +350,20 @@ if ($testMode) {
  */
 function scheduleFollowUp($email, $customDate = null)
 {
+    global $config;
+    
     // Date de relance (soit personnalisée, soit celle de l'analyse)
     $followUpDate = $customDate ?? $email['analysis']['follow_up_date'] ?? null;
 
     if (!$followUpDate) {
-        // Si pas de date définie, on utilise une semaine par défaut
-        $followUpDate = date('c', strtotime('+1 week'));
+        // Si pas de date définie, on utilise le délai par défaut de la configuration
+        $followUpDate = date('c', strtotime($config['followup']['default_delay']));
     }
 
-    // Ici, on pourrait utiliser une base de données pour stocker les relances
-    // Exemple simple avec un fichier JSON
+    // Ici, on utilise le fichier de stockage défini dans la configuration
     $followUps = [];
-    $followUpsPath = __DIR__ . '/../../follow_ups.json';
+    $followUpsPath = $config['followup']['storage_path'];
+    
     if (file_exists($followUpsPath)) {
         $followUps = json_decode(file_get_contents($followUpsPath), true) ?? [];
     }
@@ -287,6 +399,108 @@ function scheduleFollowUp($email, $customDate = null)
         .language-selector {
             margin-bottom: 20px;
         }
+        
+        /* Styles pour les événements Luma */
+        .events-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .event-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .event-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .event-card h3 {
+            margin-top: 0;
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+
+        .event-date, .event-location, .event-organizer, .event-type {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .event-links {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .event-links .button {
+            display: inline-block;
+            padding: 8px 12px;
+            background-color: #4285f4;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .event-links .button:hover {
+            background-color: #3367d6;
+        }
+        
+        /* Style pour les onglets */
+        .nav-tabs {
+            margin-bottom: 20px;
+        }
+        
+        .nav-tabs ul {
+            display: flex;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .nav-tabs ul li {
+            margin-right: 5px;
+        }
+        
+        .nav-tabs ul li a {
+            display: block;
+            padding: 10px 15px;
+            text-decoration: none;
+            color: #495057;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-bottom: none;
+            border-radius: 5px 5px 0 0;
+        }
+        
+        .nav-tabs ul li.active a {
+            color: #495057;
+            background-color: #fff;
+            border-color: #dee2e6 #dee2e6 #fff;
+        }
+        
+        /* Style pour les filtres */
+        .event-filters {
+            margin-bottom: 20px;
+        }
+        
+        .badge.bg-info {
+            background-color: #17a2b8 !important;
+        }
+        
+        .badge.bg-success {
+            background-color: #28a745 !important;
+        }
     </style>
 </head>
 
@@ -297,7 +511,7 @@ function scheduleFollowUp($email, $customDate = null)
         <div class="language-selector">
             <span><?php echo $t['language_selector']; ?></span>
             <?php foreach ($supportedLanguages as $code => $name): ?>
-                <a href="?lang=<?php echo $code; ?><?php echo $testMode ? '&test=1' : ''; ?><?php echo !empty($action) && $action != 'list' ? '&action=' . $action : ''; ?><?php echo !empty($emailId) ? '&id=' . $emailId : ''; ?>"
+                <a href="?lang=<?php echo $code; ?><?php echo $testMode ? '&test=1' : ''; ?>&tab=<?php echo $currentTab; ?>&filter=<?php echo $filter; ?><?php echo !empty($action) && $action != 'list' ? '&action=' . $action : ''; ?><?php echo !empty($emailId) ? '&id=' . $emailId : ''; ?>"
                     class="btn btn-sm <?php echo $userLang == $code ? 'btn-primary' : 'btn-outline-primary'; ?>">
                     <?php echo $name; ?>
                 </a>
@@ -307,7 +521,7 @@ function scheduleFollowUp($email, $customDate = null)
         <div class="alert alert-<?php echo $testMode ? 'warning' : 'info'; ?> mb-4">
             <?php if ($testMode): ?>
                 <strong><?php echo $t['test_mode']; ?></strong>
-                <?php if (!file_exists(__DIR__ . '/../../credentials.json')): ?>
+                <?php if (!file_exists($config['gmail']['credentials_path'])): ?>
                     <?php echo $t['credentials_needed']; ?>
                 <?php endif; ?>
             <?php else: ?>
@@ -321,72 +535,187 @@ function scheduleFollowUp($email, $customDate = null)
 
         <div class="row mb-4">
             <div class="col">
-                <a href="?lang=<?php echo $userLang; ?>&action=list<?php echo $testMode ? '&test=1' : ''; ?>"
+                <a href="?lang=<?php echo $userLang; ?>&tab=<?php echo $currentTab; ?>&filter=<?php echo $filter; ?>&action=list<?php echo $testMode ? '&test=1' : ''; ?>"
                     class="btn btn-primary"><?php echo $t['refresh_list']; ?></a>
                 <?php if (!$testMode): ?>
-                    <a href="?lang=<?php echo $userLang; ?>&test=1"
+                    <a href="?lang=<?php echo $userLang; ?>&tab=<?php echo $currentTab; ?>&filter=<?php echo $filter; ?>&test=1"
                         class="btn btn-outline-secondary"><?php echo $t['test_mode_btn']; ?></a>
                 <?php else: ?>
-                    <a href="?lang=<?php echo $userLang; ?>"
+                    <a href="?lang=<?php echo $userLang; ?>&tab=<?php echo $currentTab; ?>&filter=<?php echo $filter; ?>"
                         class="btn btn-outline-success"><?php echo $t['normal_mode_btn']; ?></a>
                 <?php endif; ?>
             </div>
         </div>
-
-        <div class="table-responsive">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th><?php echo $t['col_date']; ?></th>
-                        <th><?php echo $t['col_from']; ?></th>
-                        <th><?php echo $t['col_subject']; ?></th>
-                        <th><?php echo $t['col_followup']; ?></th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($emails as $email): ?>
-                        <tr
-                            class="<?php echo isset($email['analysis']['needs_follow_up']) && $email['analysis']['needs_follow_up'] ? 'needs-follow-up' : ''; ?>">
-                            <td><?php echo $email['date']; ?></td>
-                            <td><?php echo htmlspecialchars($email['from']); ?></td>
-                            <td><?php echo htmlspecialchars($email['subject']); ?></td>
-                            <td>
-                                <?php if (isset($email['analysis']['needs_follow_up']) && $email['analysis']['needs_follow_up']): ?>
-                                    <span class="badge bg-warning">
-                                        <?php echo $t['need_followup']; ?>         <?php echo $email['analysis']['time_reference']; ?>
-                                        <?php
-                                        if (!empty($email['analysis']['follow_up_date'])) {
-                                            $date = new DateTime($email['analysis']['follow_up_date']);
-                                            $date->setTimezone(new DateTimeZone('Europe/Paris')); // Remplacez par votre fuseau horaire
-                                            echo '(' . $date->format('d/m/Y H:i') . ' ' . $t['timezone_' . strtolower($date->format('T'))] . ')';
-                                        }
-                                        ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span class="badge bg-secondary"><?php echo $t['no_followup']; ?></span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <a href="?lang=<?php echo $userLang; ?>&action=analyze&id=<?php echo $email['id']; ?><?php echo $testMode ? '&test=1' : ''; ?>"
-                                    class="btn btn-sm btn-info"><?php echo $t['action_analyze']; ?></a>
-                                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal"
-                                    data-bs-target="#scheduleModal" data-email-id="<?php echo $email['id']; ?>">
-                                    <?php echo $t['action_schedule']; ?>
-                                </button>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+        
+        <!-- Onglets de navigation -->
+        <div class="nav-tabs">
+            <ul>
+                <li class="<?php echo $currentTab == 'emails' ? 'active' : ''; ?>">
+                    <a href="?lang=<?php echo $userLang; ?>&tab=emails<?php echo $testMode ? '&test=1' : ''; ?>">
+                        <?php echo $t['tab_emails']; ?>
+                    </a>
+                </li>
+                <li class="<?php echo $currentTab == 'reminders' ? 'active' : ''; ?>">
+                    <a href="?lang=<?php echo $userLang; ?>&tab=reminders<?php echo $testMode ? '&test=1' : ''; ?>">
+                        <?php echo $t['tab_reminders']; ?>
+                    </a>
+                </li>
+                <li class="<?php echo $currentTab == 'luma' ? 'active' : ''; ?>">
+                    <a href="?lang=<?php echo $userLang; ?>&tab=luma<?php echo $testMode ? '&test=1' : ''; ?>">
+                        <?php echo $t['tab_luma']; ?>
+                    </a>
+                </li>
+            </ul>
         </div>
+
+        <!-- Contenu des onglets -->
+        <?php if ($currentTab == 'emails'): ?>
+            <!-- Onglet Emails -->
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th><?php echo $t['col_date']; ?></th>
+                            <th><?php echo $t['col_from']; ?></th>
+                            <th><?php echo $t['col_subject']; ?></th>
+                            <th><?php echo $t['col_followup']; ?></th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($emails as $email): ?>
+                            <tr
+                                class="<?php echo isset($email['analysis']['needs_follow_up']) && $email['analysis']['needs_follow_up'] ? 'needs-follow-up' : ''; ?>">
+                                <td><?php echo $email['date']; ?></td>
+                                <td><?php echo htmlspecialchars($email['from']); ?></td>
+                                <td><?php echo htmlspecialchars($email['subject']); ?></td>
+                                <td>
+                                    <?php if (isset($email['analysis']['needs_follow_up']) && $email['analysis']['needs_follow_up']): ?>
+                                        <span class="badge bg-warning">
+                                            <?php echo $t['need_followup']; ?> <?php echo $email['analysis']['time_reference']; ?>
+                                            <?php
+                                            if (!empty($email['analysis']['follow_up_date'])) {
+                                                $date = new DateTime($email['analysis']['follow_up_date']);
+                                                $date->setTimezone(new DateTimeZone($config['ui']['timezone']));
+                                                echo '(' . $date->format('d/m/Y H:i') . ' ' . $t['timezone_' . strtolower($date->format('T'))] . ')';
+                                            }
+                                            ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge bg-secondary"><?php echo $t['no_followup']; ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <a href="?lang=<?php echo $userLang; ?>&tab=emails&action=analyze&id=<?php echo $email['id']; ?><?php echo $testMode ? '&test=1' : ''; ?>"
+                                        class="btn btn-sm btn-info"><?php echo $t['action_analyze']; ?></a>
+                                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal"
+                                        data-bs-target="#scheduleModal" data-email-id="<?php echo $email['id']; ?>">
+                                        <?php echo $t['action_schedule']; ?>
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php elseif ($currentTab == 'reminders'): ?>
+            <!-- Onglet Relances programmées -->
+            <div class="reminders-section">
+                <h2><?php echo $t['tab_reminders']; ?></h2>
+                <!-- Possiblité d'edit le code pour afficher les relances programmées -->
+                <!-- exemple : liste des relances issues du fichier follow_ups.json -->
+            </div>
+        <?php elseif ($currentTab == 'luma'): ?>
+            <!-- Onglet Événements Luma -->
+            <div class="luma-events">
+                <h2><?php echo $t['luma_title']; ?></h2>
+                
+                <!-- Filtres pour types d'events Luma -->
+                <div class="event-filters mb-4">
+                    <div class="btn-group" role="group" aria-label="Filtres d'événements">
+                        <a href="?lang=<?php echo $userLang; ?>&tab=luma&filter=all<?php echo $testMode ? '&test=1' : ''; ?>" 
+                           class="btn btn<?php echo $filter == 'all' ? '' : '-outline'; ?>-primary">
+                            <?php echo $t['luma_filter_all']; ?>
+                        </a>
+                        <a href="?lang=<?php echo $userLang; ?>&tab=luma&filter=registered<?php echo $testMode ? '&test=1' : ''; ?>" 
+                           class="btn btn<?php echo $filter == 'registered' ? '' : '-outline'; ?>-primary">
+                            <?php echo $t['luma_filter_registered']; ?>
+                        </a>
+                        <a href="?lang=<?php echo $userLang; ?>&tab=luma&filter=organized<?php echo $testMode ? '&test=1' : ''; ?>" 
+                           class="btn btn<?php echo $filter == 'organized' ? '' : '-outline'; ?>-primary">
+                            <?php echo $t['luma_filter_organized']; ?>
+                        </a>
+                    </div>
+                </div>
+                
+                <?php if (empty($lumaEvents)): ?>
+                    <p><?php echo $t['luma_no_events']; ?></p>
+                <?php else: ?>
+                    <div class="events-grid">
+                        <?php foreach ($lumaEvents as $event): ?>
+                            <?php 
+                            // Si email avec event_info, extraire les infos d'événement
+                            $eventInfo = isset($event['event_info']) ? $event['event_info'] : $event;
+                            // Déterminer type d'email (par défaut: inscription)
+                            $emailType = isset($eventInfo['email_type']) ? $eventInfo['email_type'] : 'registration';
+                            ?>
+                            <div class="event-card">
+                                <h3><?php echo htmlspecialchars($eventInfo['event_name'] ?? 'Événement sans nom'); ?></h3>
+                                
+                                <!-- Badge indiquant le type d'événement -->
+                                <div class="event-type mb-2">
+                                    <span class="badge <?php echo $emailType === 'organizer' ? 'bg-success' : 'bg-info'; ?>">
+                                        <?php echo $emailType === 'organizer' ? $t['luma_organizer'] : $t['luma_registration']; ?>
+                                    </span>
+                                </div>
+                                
+                                <?php if (!empty($eventInfo['event_date'])): ?>
+                                <div class="event-date">
+                                    <strong><?php echo $t['luma_date']; ?></strong> <?php echo htmlspecialchars($eventInfo['event_date']); ?>
+                                    <?php if (!empty($eventInfo['event_time'])): ?>
+                                    <?php echo $t['luma_time']; ?> <?php echo htmlspecialchars($eventInfo['event_time']); ?>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($eventInfo['event_location'])): ?>
+                                <div class="event-location">
+                                    <strong><?php echo $t['luma_location']; ?></strong> <?php echo htmlspecialchars($eventInfo['event_location']); ?>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($eventInfo['organizer'])): ?>
+                                <div class="event-organizer">
+                                    <strong><?php echo $t['luma_email_organizer']; ?></strong> <?php echo htmlspecialchars($eventInfo['organizer']); ?>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <div class="event-links">
+                                    <?php if (!empty($eventInfo['event_url'])): ?>
+                                    <a href="<?php echo htmlspecialchars($eventInfo['event_url']); ?>" target="_blank" class="button">
+                                        <?php echo $t['luma_view_event']; ?>
+                                    </a>
+                                    <?php endif; ?>
+                                    
+                                    <?php if (!empty($eventInfo['calendar_link'])): ?>
+                                    <a href="<?php echo htmlspecialchars($eventInfo['calendar_link']); ?>" target="_blank" class="button">
+                                        <?php echo $t['luma_add_calendar']; ?>
+                                    </a>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
     </div>
 
-    <!-- Modal pour programmer une relance manuelle -->
+    <!-- Modalprogrammation relance manuelle -->
     <div class="modal fade" id="scheduleModal" tabindex="-1" aria-labelledby="scheduleModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form action="?lang=<?php echo $userLang; ?>&action=schedule<?php echo $testMode ? '&test=1' : ''; ?>"
+                <form action="?lang=<?php echo $userLang; ?>&tab=emails&action=schedule<?php echo $testMode ? '&test=1' : ''; ?>"
                     method="post">
                     <input type="hidden" name="id" id="emailIdInput">
                     <div class="modal-header">
@@ -422,9 +751,9 @@ function scheduleFollowUp($email, $customDate = null)
                     const emailIdInput = document.getElementById('emailIdInput');
                     emailIdInput.value = emailId;
 
-                    // Date par défaut (dans une semaine)
+                    // Date par défaut (délai par défaut configuré)
                     const now = new Date();
-                    now.setDate(now.getDate() + 7);
+                    now.setDate(now.getDate() + 7); // Délai par défaut d'une semaine
                     const defaultDate = now.toISOString().slice(0, 16);
                     document.getElementById('follow_up_date').value = defaultDate;
                 });
